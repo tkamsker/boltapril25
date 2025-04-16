@@ -1,73 +1,87 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, AuthContextType } from '../types/auth';
 import { logger } from '../utils/logger';
+import { AuthService } from '../services/AuthService';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const authService = AuthService.getInstance();
+
+  useEffect(() => {
+    // Check for existing token in localStorage
+    const storedToken = localStorage.getItem('authToken');
+    if (storedToken) {
+      authService.validateToken(storedToken).then(isValid => {
+        if (isValid) {
+          setToken(storedToken);
+          // Fetch user data using the token
+          fetch(import.meta.env.VITE_GRAPHQL_API_URL, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${storedToken}`
+            },
+            body: JSON.stringify({
+              query: `
+                query UsersFindOne {
+                  UsersFindOne {
+                    _id
+                    email
+                    roles
+                    fullName
+                    isEnabled
+                  }
+                }
+              `,
+            }),
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.data?.UsersFindOne) {
+              setUser(data.data.UsersFindOne);
+            }
+          })
+          .catch(error => {
+            logger.error('Failed to fetch user data', error);
+            localStorage.removeItem('authToken');
+          });
+        } else {
+          localStorage.removeItem('authToken');
+        }
+      });
+    }
+  }, []);
 
   const login = async (email: string, password: string) => {
     try {
-      logger.info('Attempting login', { email });
-      
-      // First, authenticate with BlueLibs
-      const authResponse = await fetch(`${import.meta.env.VITE_GRAPHQL_API_URL}/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const authData = await authResponse.json();
-      if (!authData.token) {
-        logger.warn('Login failed: No token received');
-        throw new Error('Authentication failed');
-      }
-
-      setToken(authData.token);
-
-      // Now fetch user data with the token
-      const response = await fetch(import.meta.env.VITE_GRAPHQL_API_URL, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authData.token}`
-        },
-        body: JSON.stringify({
-          query: `
-            query UsersFindOne {
-              UsersFindOne {
-                _id
-                email
-                roles
-                fullName
-                isEnabled
-              }
-            }
-          `,
-        }),
-      });
-
-      const data = await response.json();
-      if (data.data?.UsersFindOne) {
-        logger.info('Login successful', { userId: data.data.UsersFindOne._id });
-        setUser(data.data.UsersFindOne);
-      } else {
-        logger.warn('Login failed: Invalid credentials');
-        throw new Error('Invalid credentials');
-      }
+      const { token: newToken, user: newUser } = await authService.login(email, password);
+      setToken(newToken);
+      setUser(newUser);
+      localStorage.setItem('authToken', newToken);
     } catch (error) {
       logger.error('Login error', error);
       setToken(null);
-      throw new Error('Login failed');
+      setUser(null);
+      throw error;
     }
   };
 
-  const logout = () => {
-    logger.info('User logged out');
-    setUser(null);
-    setToken(null);
+  const logout = async () => {
+    try {
+      if (token) {
+        await authService.logout(token);
+      }
+      setToken(null);
+      setUser(null);
+      localStorage.removeItem('authToken');
+      logger.info('User logged out');
+    } catch (error) {
+      logger.error('Logout error', error);
+      throw error;
+    }
   };
 
   return (
