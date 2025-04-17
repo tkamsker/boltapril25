@@ -22,7 +22,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${storedToken}`
+              'Bluelibs-Token': storedToken
             },
             body: JSON.stringify({
               query: `
@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           })
           .catch(error => {
-            logger.error('Failed to fetch user data', error);
+            logger.error('AuthProvider -> Failed to fetch user data', error);
             localStorage.removeItem('authToken');
           });
         } else {
@@ -55,14 +55,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const login = async (email: string, password: string) => {
+  // Listen for token refresh events
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'authToken' && e.newValue) {
+        setToken(e.newValue);
+        logger.info('AuthProvider-useffect->Token updated from storage event');
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+  const login = async (username: string, password: string) => {
     try {
-      const { token: newToken, user: newUser } = await authService.login(email, password);
+      const { token: newToken, user: newUser } = await authService.login(username, password);
       setToken(newToken);
       setUser(newUser);
       localStorage.setItem('authToken', newToken);
     } catch (error) {
-      logger.error('Login error', error);
+      logger.error('Login->Login error', error);
       setToken(null);
       setUser(null);
       throw error;
@@ -77,9 +90,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(null);
       setUser(null);
       localStorage.removeItem('authToken');
-      logger.info('User logged out');
+      logger.info('Logout-> User logged out');
     } catch (error) {
-      logger.error('Logout error', error);
+      logger.error('Logout-Error-> Logout error', error);
       throw error;
     }
   };
@@ -100,7 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    logger.error('useAuth must be used within an AuthProvider');
+    logger.error('useAuth-> useAuth must be used within an AuthProvider');
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;

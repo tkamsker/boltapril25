@@ -2,7 +2,7 @@ type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 class Logger {
   private static instance: Logger;
-  private currentLevel: LogLevel = 'info';
+  private currentLevel: LogLevel = 'debug';
   private levels: Record<LogLevel, number> = {
     debug: 0,
     info: 1,
@@ -29,7 +29,9 @@ class Logger {
 
   private formatMessage(level: LogLevel, message: string, ...args: any[]): string {
     const timestamp = new Date().toISOString();
-    return `[${timestamp}] [${level.toUpperCase()}] ${message} ${args.length ? JSON.stringify(args) : ''}`;
+    const stackTrace = new Error().stack?.split('\n').slice(2).join('\n');
+    const formattedArgs = args.length ? JSON.stringify(args, null, 2) : '';
+    return `[${timestamp}] [${level.toUpperCase()}] ${message}\n${formattedArgs}\nStack Trace:\n${stackTrace}`;
   }
 
   debug(message: string, ...args: any[]) {
